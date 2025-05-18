@@ -10,7 +10,7 @@ export default function PostPage() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    fetch(`http://localhost:4000/post/${id}`)
+    fetch(`https://mern-blog-master-rn9z.onrender.com/post/${id}`)
       .then(response => response.json())
       .then(postInfo => setPostInfo(postInfo));
   }, [id]);
@@ -19,7 +19,7 @@ export default function PostPage() {
     const confirmDelete = window.confirm("Are you sure you want to delete this post?");
     if (!confirmDelete) return;
 
-    const response = await fetch(`http://localhost:4000/post/${id}`, {
+    const response = await fetch(`https://mern-blog-master-rn9z.onrender.com/post/${id}`, {
       method: 'DELETE',
       credentials: 'include',
     });
@@ -52,7 +52,7 @@ export default function PostPage() {
         </div>
       )}
       <div className="image">
-        <img src={`http://localhost:4000/${postInfo.cover}`} alt=""/>
+        <img src={`https://mern-blog-master-rn9z.onrender.com/${postInfo.cover}`} alt=""/>
       </div>
       <div className="content" dangerouslySetInnerHTML={{__html:postInfo.content}} />
     </div>
