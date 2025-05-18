@@ -15,7 +15,7 @@ const salt = bcrypt.genSaltSync(10);
 const secret = process.env.JWT_SECRET;
 
 app.use(cors({
-  origin: 'http://localhost:3000',
+  origin: 'https://mern-blog-master-1-kx73.onrender.com',
   credentials: true,
 }));
 app.use(express.json());
