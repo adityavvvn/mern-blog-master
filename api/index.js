@@ -11,8 +11,16 @@ const cookieParser = require('cookie-parser');
 const multer = require('multer');
 const uploadMiddleware = multer({ dest: 'uploads/' });
 const fs = require('fs');
+const cloudinary = require('cloudinary').v2;
 const salt = bcrypt.genSaltSync(10);
 const secret = process.env.JWT_SECRET;
+
+// Configure Cloudinary
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
+});
 
 app.use(cors({
   origin: 'http://localhost:3000',
@@ -98,24 +106,30 @@ app.post('/post', uploadMiddleware.single('file'), async (req, res) => {
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
-    const { originalname, path } = req.file;
-    const parts = originalname.split('.');
-    const ext = parts[parts.length - 1];
-    const newPath = path + '.' + ext;
-    fs.renameSync(path, newPath);
-
-    const { title, summary, content } = req.body;
     try {
+      // Upload to Cloudinary
+      const result = await cloudinary.uploader.upload(req.file.path, {
+        folder: 'blog-images',
+      });
+
+      // Delete the temporary file
+      fs.unlinkSync(req.file.path);
+
+      const { title, summary, content } = req.body;
       const postDoc = await Post.create({
         title,
         summary,
         content,
-        cover: newPath,
+        cover: result.secure_url, // Store Cloudinary URL
         author: info.id,
       });
       res.json(postDoc);
     } catch (error) {
       console.error(error);
+      // Clean up the temporary file if it exists
+      if (req.file && fs.existsSync(req.file.path)) {
+        fs.unlinkSync(req.file.path);
+      }
       res.status(500).json({ error: 'Failed to create post' });
     }
   });
@@ -128,13 +142,31 @@ app.put('/post', uploadMiddleware.single('file'), async (req, res) => {
   jwt.verify(token, secret, {}, async (err, info) => {
     if (err) return res.status(403).json({ error: 'Invalid token' });
 
-    let newPath = null;
+    let newCoverUrl = null;
     if (req.file) {
-      const { originalname, path } = req.file;
-      const parts = originalname.split('.');
-      const ext = parts[parts.length - 1];
-      newPath = path + '.' + ext;
-      fs.renameSync(path, newPath);
+      try {
+        // Upload new image to Cloudinary
+        const result = await cloudinary.uploader.upload(req.file.path, {
+          folder: 'blog-images',
+        });
+        newCoverUrl = result.secure_url;
+
+        // Delete the temporary file
+        fs.unlinkSync(req.file.path);
+
+        // Delete old image from Cloudinary if it exists
+        const postDoc = await Post.findById(req.body.id);
+        if (postDoc && postDoc.cover) {
+          const publicId = postDoc.cover.split('/').slice(-1)[0].split('.')[0];
+          await cloudinary.uploader.destroy(publicId);
+        }
+      } catch (error) {
+        console.error(error);
+        if (req.file && fs.existsSync(req.file.path)) {
+          fs.unlinkSync(req.file.path);
+        }
+        return res.status(500).json({ error: 'Failed to upload image' });
+      }
     }
 
     const { id, title, summary, content } = req.body;
@@ -149,7 +181,7 @@ app.put('/post', uploadMiddleware.single('file'), async (req, res) => {
         title,
         summary,
         content,
-        cover: newPath ? newPath : postDoc.cover,
+        cover: newCoverUrl ? newCoverUrl : postDoc.cover,
       });
 
       res.json(postDoc);
@@ -200,8 +232,10 @@ app.delete('/post/:id', async (req, res) => {
       const isAuthor = JSON.stringify(postDoc.author) === JSON.stringify(info.id);
       if (!isAuthor) return res.status(403).json('You are not the author');
 
-      if (postDoc.cover && fs.existsSync(postDoc.cover)) {
-        fs.unlinkSync(postDoc.cover);
+      // Delete image from Cloudinary if it exists
+      if (postDoc.cover) {
+        const publicId = postDoc.cover.split('/').slice(-1)[0].split('.')[0];
+        await cloudinary.uploader.destroy(publicId);
       }
 
       await Post.findByIdAndDelete(id);
